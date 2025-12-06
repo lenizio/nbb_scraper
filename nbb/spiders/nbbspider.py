@@ -1,4 +1,5 @@
 import scrapy
+from nbb.db_manager import DatabaseManager, DB_CONFIG, close_pool
 from nbb.items import  GameItem, ShotItem, PlayerItem, TeamItem
 from nbb.item_loaders.games_loaders import GameLoader 
 from nbb.item_loaders.shots_loaders import ShotLoader
@@ -15,7 +16,8 @@ urls = {
     '2021/2022': 'https://lnb.com.br/nbb/tabela-de-jogos/?season%5B%5D=63',
     '2022/2023': 'https://lnb.com.br/nbb/tabela-de-jogos/?season%5B%5D=71&wherePlaying=-1&played=-1',
     '2023/2024': 'https://lnb.com.br/nbb/tabela-de-jogos/?season%5B%5D=80&wherePlaying=-1&played=-1',
-    '2024/2025': 'https://lnb.com.br/nbb/tabela-de-jogos/?season%5B%5D=88'
+    '2024/2025': 'https://lnb.com.br/nbb/tabela-de-jogos/?season%5B%5D=88',
+    '2025/2026': 'https://lnb.com.br/nbb/tabela-de-jogos'
 }
 
 try:
@@ -37,12 +39,30 @@ class GameSpider(scrapy.Spider):
     
     name = 'games'
     start_urls=[url]
+    
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        with DatabaseManager(DB_CONFIG) as db:
+            self.existing_game_ids = db.get_id_games_by_season(temporada)
 
     def parse(self, response):
 
         games_table = response.css("table.table_matches_table tbody:nth-of-type(1) tr")
         
         for game in games_table:
+            
+            check = game.css('td.score_value.show-for-medium span.home::text').get()
+            
+            if check is None:
+                
+                break
+            
+            game_id = int(game.css('td::attr(data-real-id)').get())
+
+            if game_id in self.existing_game_ids:
+                
+                continue
             
             away_team_loader = TeamLoader(item = TeamItem(), selector = game)
             home_team_loader = TeamLoader(item = TeamItem(), selector = game)

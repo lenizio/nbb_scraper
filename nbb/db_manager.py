@@ -142,7 +142,28 @@ class DatabaseManager:
             logger.error(f"Erro ao criar tabelas: {e}", exc_info=True)
             self.conn.rollback() 
             raise 
-
+    def get_id_games_by_season(self,season):
+   
+        try:
+            self.cur.execute(
+                        """
+                        SELECT DISTINCT ps.game_id
+                        FROM player_stats_table ps
+                        INNER JOIN games_table g
+                            ON g.game_id = ps.game_id
+                        WHERE g.season = %s;
+                        """,
+                        (season,)
+                    )
+            results = self.cur.fetchall()
+            
+            
+            return [row[0] for row in results]
+        except Exception as e:
+            logger.error(f"Erro ao selecionar jogos {e}", exc_info=True)
+            self.conn.rollback()
+            raise
+    
     def insert_team(self, team_item):
         try:
             adapter = ItemAdapter(team_item)
