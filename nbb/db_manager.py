@@ -147,10 +147,8 @@ class DatabaseManager:
         try:
             self.cur.execute(
                         """
-                        SELECT DISTINCT ps.game_id
-                        FROM player_stats_table ps
-                        INNER JOIN games_table g
-                            ON g.game_id = ps.game_id
+                        SELECT DISTINCT g.id
+                        FROM games_table g                            
                         WHERE g.season = %s;
                         """,
                         (season,)
