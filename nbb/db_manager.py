@@ -83,13 +83,13 @@ class DatabaseManager:
         try:
             self.cur.execute("""
                 -- Table for teams (id is PRIMARY KEY, automatically indexed)
-                CREATE TABLE IF NOT EXISTS teams (
+                CREATE TABLE IF NOT EXISTS teams_table (
                     id VARCHAR(100) PRIMARY KEY,
                     name VARCHAR(50),
                     logo TEXT
                 );
                 
-                CREATE TABLE IF NOT EXISTS players (
+                CREATE TABLE IF NOT EXISTS players_table (
                     id INTEGER PRIMARY KEY,
                     player_name VARCHAR(50),
                     -- CORREÇÃO: Coluna renomeada para 'player_icon_url' para consistência
@@ -97,7 +97,7 @@ class DatabaseManager:
                 );
 
                 -- Table for player's team per season (composite PRIMARY KEY, automatically indexed)
-                CREATE TABLE IF NOT EXISTS player_teams_by_season (
+                CREATE TABLE IF NOT EXISTS player_teams_by_season_table (
                     player_id INTEGER REFERENCES players(id) NOT NULL,
                     player_team_id VARCHAR(100) REFERENCES teams(id) NOT NULL,
                     season VARCHAR(20) NOT NULL,
@@ -106,7 +106,7 @@ class DatabaseManager:
                 );
                 
                 -- Table for games (game_id is PRIMARY KEY, automatically indexed)
-                CREATE TABLE IF NOT EXISTS games (
+                CREATE TABLE IF NOT EXISTS games_table (
                     id INTEGER PRIMARY KEY,
                     game_date DATE,
                     game_time TIME,
@@ -121,37 +121,10 @@ class DatabaseManager:
                     link TEXT
                 );
 
-                -- Table for player statistics in a game (composite PRIMARY KEY, automatically indexed)
-                CREATE TABLE IF NOT EXISTS player_stats (
-                    player_id INTEGER REFERENCES players(id) NOT NULL,
-                    game_id INTEGER REFERENCES games(id) NOT NULL,
-                    team_id VARCHAR(100) REFERENCES teams(id) NOT NULL, 
-                    quarter VARCHAR(10) NOT NULL, 
-                    minutes_played FLOAT,
-                    assist INTEGER,
-                    points_attempts INTEGER,
-                    points_made INTEGER,
-                    defensive_rebounds INTEGER,
-                    offensive_rebounds INTEGER,
-                    three_points_attempts INTEGER,
-                    three_points_made INTEGER,
-                    two_points_attempts INTEGER,
-                    two_points_made INTEGER,
-                    free_throws_attempts INTEGER,
-                    free_throws_made INTEGER,
-                    steals INTEGER,
-                    blocks INTEGER,
-                    fouls_committed INTEGER,
-                    fouls_received INTEGER,
-                    total_errors INTEGER,
-                    dunks INTEGER,
-                    plus_minus_while_on_court INTEGER,
-                    efficiency INTEGER,
-                    PRIMARY KEY (player_id, game_id, quarter)
-                );
+               
 
                 -- Table for shots 
-                CREATE TABLE IF NOT EXISTS shots (
+                CREATE TABLE IF NOT EXISTS shots_table (
                     id SERIAL PRIMARY KEY,
                     player_id INTEGER REFERENCES players(id),
                     game_id INTEGER REFERENCES games(id),
@@ -163,18 +136,6 @@ class DatabaseManager:
                     shot_y_location FLOAT
                 );
 
-                -- Table for play-by-play actions
-                CREATE TABLE IF NOT EXISTS play_by_play (
-                    id SERIAL PRIMARY KEY,
-                    game_id INTEGER REFERENCES games(id) NOT NULL, 
-                    player_id INTEGER REFERENCES players(id),
-                    team_id VARCHAR(100) REFERENCES teams(id), 
-                    quarter_time TIME,
-                    quarter VARCHAR(10) NOT NULL,
-                    home_score INTEGER NOT NULL,
-                    away_score INTEGER NOT NULL,
-                    play TEXT NOT NULL
-                );
                 
             """)
         except Exception as e:
@@ -183,264 +144,145 @@ class DatabaseManager:
             raise 
 
     def insert_team(self, team_item):
-        """Insere ou atualiza um registro de equipe."""
         try:
             adapter = ItemAdapter(team_item)
-            team_id = adapter.get('id')
+            team_id = adapter.get('team_id')
             name = adapter.get('name')
-            logo = adapter.get('logo')
-
-            if not team_id:
-                logger.warning(f"Tentativa de inserir equipe sem ID. Dados: {team_item}")
-                return 
+            initials = adapter.get('initials')
 
             self.cur.execute(
                 """
-                INSERT INTO teams (id, name, logo)
+                INSERT INTO teams_table (team_id, name, initials)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (id) DO UPDATE
-                SET name = EXCLUDED.name,
-                    logo = EXCLUDED.logo;
+                ON CONFLICT (team_id) DO NOTHING;
                 """,
-                (team_id, name, logo)
+                (team_id, name, initials)
             )
-        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
-            self.conn.rollback()
-            logger.error(f"Erro ao inserir/atualizar equipe '{team_id}': {e}", exc_info=True)
-            raise 
+            self.conn.commit()
+
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Erro inesperado ao inserir/atualizar equipe '{team_id}': {e}", exc_info=True)
+            logger.error(f"Erro ao inserir equipe {team_id}: {e}", exc_info=True)
             raise
 
-
+   
     def insert_player(self, player_item):
-        """Insere ou atualiza um registro de jogador."""
         try:
             adapter = ItemAdapter(player_item)
             player_id = adapter.get('player_id')
-            player_name = adapter.get('player_name')
-            player_icon_url = adapter.get('player_icon_url')
-
-            if not player_id:
-                logger.warning(f"Tentativa de inserir jogador sem ID. Dados: {player_item}")
-                return
+            name = adapter.get('name')
 
             self.cur.execute(
                 """
-                INSERT INTO players (id, player_name, player_icon_url)
+                INSERT INTO players_table (player_id, name)
+                VALUES (%s, %s)
+                ON CONFLICT (player_id) DO NOTHING;
+                """,
+                (player_id, name)
+            )
+            self.conn.commit()
+
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Erro ao inserir jogador {player_id}: {e}", exc_info=True)
+            raise
+
+   
+    def insert_player_team_season(self, item):
+        try:
+            adapter = ItemAdapter(item)
+            player_id = adapter.get("player_id")
+            team_name = adapter.get("team_name")
+            season = adapter.get("season")
+
+            self.cur.execute(
+                """
+                INSERT INTO player_teams_by_season_table (player_id, team, season)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (id) DO UPDATE
-                SET player_name = EXCLUDED.player_name,
-                    player_icon_url = EXCLUDED.player_icon_url;
+                ON CONFLICT DO NOTHING;
                 """,
-            
-                (player_id, player_name, player_icon_url)
+                (player_id, team_name, season)
             )
-        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
-            self.conn.rollback()
-            logger.error(f"Erro ao inserir/atualizar jogador '{player_id}': {e}", exc_info=True)
-            raise
+            self.conn.commit()
+
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Erro inesperado ao inserir/atualizar jogador '{player_id}': {e}", exc_info=True)
+            logger.error(f"Erro ao inserir player_team_season: {e}", exc_info=True)
             raise
 
-    def insert_player_team_by_season(self, player_item):
-        """Insere ou atualiza o time e número de um jogador para uma temporada específica."""
-        try:
-            adapter = ItemAdapter(player_item)
-            player_id = adapter.get('player_id')
-            player_team_id = adapter.get('player_team_id')
-            season = adapter.get('season')
-            player_number = adapter.get('player_number')
-
-            if not all([player_id, player_team_id, season]):
-                logger.warning(f"Dados faltando para player_teams_by_season (player_id, player_team_id ou season é NULL). Dados: {player_item}")
-                return
-
-            self.cur.execute(
-                """
-                INSERT INTO player_teams_by_season (player_id, player_team_id, season, player_number)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (player_id, player_team_id, season) DO UPDATE 
-                SET player_number = EXCLUDED.player_number;
-                """,
-                (player_id, player_team_id, season, player_number)
-            )
-        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
-            self.conn.rollback()
-            logger.error(f"Erro ao inserir time do jogador para '{player_id}' na temporada '{season}': {e}", exc_info=True)
-            raise
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Erro inesperado ao inserir time do jogador para '{player_id}' na temporada '{season}': {e}", exc_info=True)
-            raise
-
+   
     def insert_game(self, game_item):
-        """Insere ou atualiza um registro de jogo."""
         try:
             adapter = ItemAdapter(game_item)
             game_id = adapter.get('game_id')
-            game_date = adapter.get('game_date')
-            game_time = adapter.get('game_time')
-
-            if not game_id:
-                logger.warning(f"Tentativa de inserir jogo sem ID. Dados: {game_item}")
-                return
+            season = adapter.get('season')
+            home_team_id = adapter.get('home_team_id')
+            away_team_id = adapter.get('away_team_id')
 
             self.cur.execute(
                 """
-                INSERT INTO games (
-                    id, game_date, game_time,
-                    home_team_id, away_team_id, home_team_score, away_team_score,
-                    round, stage, season, arena, link
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE
-                SET game_date = EXCLUDED.game_date,
-                    game_time = EXCLUDED.game_time,
-                    home_team_id = EXCLUDED.home_team_id,
-                    away_team_id = EXCLUDED.away_team_id,
-                    home_team_score = EXCLUDED.home_team_score,
-                    away_team_score = EXCLUDED.away_team_score,
-                    round = EXCLUDED.round,
-                    stage = EXCLUDED.stage,
-                    season = EXCLUDED.season,
-                    arena = EXCLUDED.arena,
-                    link = EXCLUDED.link;
+                INSERT INTO games_table (game_id, season, home_team_id, away_team_id)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (game_id) DO NOTHING;
                 """,
-                
-                (
-                    game_id, game_date, game_time,
-                    adapter.get('home_team_id'), adapter.get('away_team_id'),
-                    adapter.get('home_team_score'), adapter.get('away_team_score'),
-                    adapter.get('round'), adapter.get('stage'), adapter.get('season'),
-                    adapter.get('arena'), adapter.get('link')
-                )
+                (game_id, season, home_team_id, away_team_id)
             )
-        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
-            self.conn.rollback()
-            logger.error(f"Erro ao inserir/atualizar jogo '{game_id}': {e}", exc_info=True)
-            raise
+            self.conn.commit()
+
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Erro inesperado ao inserir/atualizar jogo '{game_id}': {e}", exc_info=True)
+            logger.error(f"Erro ao inserir jogo {game_id}: {e}", exc_info=True)
             raise
 
-    def insert_stats(self, stats_item):
-        """Insere ou atualiza estatísticas de jogador para um jogo e quarto."""
-        try:
-            adapter = ItemAdapter(stats_item)
-            player_id = adapter.get('player_id')
-            game_id = adapter.get('game_id')
-            team_id = adapter.get('team_id')
-            quarter = adapter.get('quarter')
-
-            if not all([player_id, game_id, team_id, quarter]):
-                missing_fields = []
-                if not player_id: missing_fields.append('player_id')
-                if not game_id: missing_fields.append('game_id')
-                if not team_id: missing_fields.append('team_id')
-                if not quarter: missing_fields.append('quarter')
-                
-                logger.error(f"Dados essenciais faltando para player_stats (campos NULL: {', '.join(missing_fields)}). Item: {stats_item}")
-                return 
-
-            values_to_insert = (
-                player_id, game_id, team_id, quarter,
-                adapter.get('minutes_played'), adapter.get('assist'),
-                adapter.get('points_attempts'), adapter.get('points_made'),
-                adapter.get('defensive_rebounds'), adapter.get('offensive_rebounds'),
-                adapter.get('three_points_attempts'), adapter.get('three_points_made'),
-                adapter.get('two_points_attempts'), adapter.get('two_points_made'),
-                adapter.get('free_throws_attempts'), adapter.get('free_throws_made'),
-                adapter.get('steals'), adapter.get('blocks'),
-                adapter.get('fouls_committed'), adapter.get('fouls_received'),
-                adapter.get('total_errors'), adapter.get('dunks'),
-                adapter.get('plus_minus_while_on_court'), adapter.get('efficiency')
-            )
-            
-            self.cur.execute(
-                """
-                INSERT INTO player_stats (
-                    player_id, game_id, team_id, quarter, minutes_played, assist,
-                    points_attempts, points_made, defensive_rebounds, offensive_rebounds,
-                    three_points_attempts, three_points_made, two_points_attempts, two_points_made,
-                    free_throws_attempts, free_throws_made, steals, blocks,
-                    fouls_committed, fouls_received, total_errors, dunks,
-                    plus_minus_while_on_court, efficiency
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (player_id, game_id, quarter) DO UPDATE
-                SET minutes_played = EXCLUDED.minutes_played,
-                    assist = EXCLUDED.assist,
-                    points_attempts = EXCLUDED.points_attempts,
-                    points_made = EXCLUDED.points_made,
-                    defensive_rebounds = EXCLUDED.defensive_rebounds,
-                    offensive_rebounds = EXCLUDED.offensive_rebounds,
-                    three_points_attempts = EXCLUDED.three_points_attempts,
-                    three_points_made = EXCLUDED.three_points_made,
-                    two_points_attempts = EXCLUDED.two_points_attempts,
-                    two_points_made = EXCLUDED.two_points_made,
-                    free_throws_attempts = EXCLUDED.free_throws_attempts,
-                    free_throws_made = EXCLUDED.free_throws_made,
-                    steals = EXCLUDED.steals,
-                    blocks = EXCLUDED.blocks,
-                    fouls_committed = EXCLUDED.fouls_committed,
-                    fouls_received = EXCLUDED.fouls_received,
-                    total_errors = EXCLUDED.total_errors,
-                    dunks = EXCLUDED.dunks,
-                    plus_minus_while_on_court = EXCLUDED.plus_minus_while_on_court,
-                    efficiency = EXCLUDED.efficiency,
-                    team_id = EXCLUDED.team_id;
-                """,
-                values_to_insert
-            )
-        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
-            self.conn.rollback() 
-            logger.error(f"Erro ao inserir/atualizar estatísticas para o jogador '{player_id}' no jogo '{game_id}', quarto '{quarter}': {e}", exc_info=True)
-            raise 
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Erro inesperado ao inserir/atualizar estatísticas para o jogador '{player_id}' no jogo '{game_id}', quarto '{quarter}': {e}", exc_info=True)
-            raise
-
+    
     def insert_shot(self, shot_item):
-        """Insere um registro de arremesso."""
         try:
             adapter = ItemAdapter(shot_item)
             player_id = adapter.get('player_id')
             game_id = adapter.get('game_id')
-            team_id = adapter.get('team_id') 
+            team_id = adapter.get('team_id')
 
-          
-            if not all([player_id, game_id, team_id]): 
-                logger.warning(f"Dados essenciais faltando para inserir arremesso (player_id, game_id ou team_id é NULL). Item: {shot_item}")
+            shot_quarter = adapter.get('shot_quarter')
+            shot_time = adapter.get('shot_time')
+            shot_type = adapter.get('shot_type')
+            shot_x_location = adapter.get('shot_x_location')
+            shot_y_location = adapter.get('shot_y_location')
+
+            if not all([player_id, game_id, team_id]):
+                logger.warning(
+                    f"Campos essenciais ausentes em shot: {shot_item}"
+                )
                 return
 
             self.cur.execute(
                 """
-                INSERT INTO shots (
-                    player_id, game_id, team_id, shot_quarter, shot_time,
-                    shot_type, shot_x_location, shot_y_location
+                INSERT INTO shots_table (
+                    player_id, game_id, team_id,
+                    shot_quarter, shot_time, shot_type,
+                    shot_x_location, shot_y_location
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s); 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
                 """,
                 (
-                    player_id, game_id, adapter.get('team_id'), adapter.get('shot_quarter'),
-                    adapter.get('shot_time'), adapter.get('shot_type'),
-                    adapter.get('shot_x_location'), adapter.get('shot_y_location')
+                    player_id, game_id, team_id,
+                    shot_quarter, shot_time, shot_type,
+                    shot_x_location, shot_y_location
                 )
             )
-        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
-            self.conn.rollback()
-            logger.error(f"Erro ao inserir arremesso para o jogador '{player_id}' no jogo '{game_id}': {e}", exc_info=True)
-            raise
+            self.conn.commit()
+
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Erro inesperado ao inserir arremesso para o jogador '{player_id}' no jogo '{game_id}': {e}", exc_info=True)
+            logger.error(
+                f"Erro ao inserir arremesso do jogador {player_id} no jogo {game_id}: {e}",
+                exc_info=True
+            )
             raise
+
+    
+    def close(self):
+        self.cur.close()
+        self.conn.close()
 
 
 
