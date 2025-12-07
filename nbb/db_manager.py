@@ -92,7 +92,6 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS players_table (
                     id INTEGER PRIMARY KEY,
                     player_name VARCHAR(50),
-                    -- CORREÇÃO: Coluna renomeada para 'player_icon_url' para consistência
                     player_icon_url TEXT
                 );
 
