@@ -97,8 +97,8 @@ class DatabaseManager:
 
                 -- Table for player's team per season (composite PRIMARY KEY, automatically indexed)
                 CREATE TABLE IF NOT EXISTS player_teams_by_season_table (
-                    player_id INTEGER REFERENCES players(id) NOT NULL,
-                    player_team_id VARCHAR(100) REFERENCES teams(id) NOT NULL,
+                    player_id INTEGER REFERENCES players_table(id) NOT NULL,
+                    player_team_id VARCHAR(100) REFERENCES teams_table(id) NOT NULL,
                     season VARCHAR(20) NOT NULL,
                     player_number VARCHAR(10),
                     PRIMARY KEY (player_id, player_team_id, season)
@@ -109,8 +109,8 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY,
                     game_date DATE,
                     game_time TIME,
-                    home_team_id VARCHAR(100) REFERENCES teams(id),
-                    away_team_id VARCHAR(100) REFERENCES teams(id),
+                    home_team_id VARCHAR(100) REFERENCES teams_table(id),
+                    away_team_id VARCHAR(100) REFERENCES teams_table(id),
                     home_team_score INTEGER,
                     away_team_score INTEGER,
                     round VARCHAR(30),
@@ -120,41 +120,43 @@ class DatabaseManager:
                     link TEXT
                 );
 
-               
-
                 -- Table for shots 
                 CREATE TABLE IF NOT EXISTS shots_table (
                     id SERIAL PRIMARY KEY,
-                    player_id INTEGER REFERENCES players(id),
-                    game_id INTEGER REFERENCES games(id),
-                    team_id VARCHAR(100) REFERENCES teams(id),
+                    player_id INTEGER REFERENCES players_table(id),
+                    game_id INTEGER REFERENCES games_table(id),
+                    team_id VARCHAR(100) REFERENCES teams_table(id),
                     shot_quarter VARCHAR(10),
                     shot_time TIME,
                     shot_type VARCHAR(20),
                     shot_x_location FLOAT,
                     shot_y_location FLOAT
                 );
-
-                
             """)
+            logger.info("Tabelas criadas ou já existentes.")
         except Exception as e:
             logger.error(f"Erro ao criar tabelas: {e}", exc_info=True)
             self.conn.rollback() 
             raise 
+            
     def get_id_games_by_season(self,season):
-   
+        """
+        CORREÇÃO: Referência a uma tabela `player_stats_table` não definida
+        e alias incorreto para `games_table`.
+        Assumindo que a lista de jogos por temporada deve vir da `games_table`.
+        Se você tiver uma tabela `player_stats_table` real, ajuste a consulta.
+        """
         try:
+           
             self.cur.execute(
-                        """
-                        SELECT DISTINCT g.id
-                        FROM games_table g                            
-                        WHERE g.season = %s;
-                        """,
-                        (season,)
-                    )
+                """
+                SELECT DISTINCT g.id
+                FROM games_table g
+                WHERE g.season = %s;
+                """,
+                (season,)
+            )
             results = self.cur.fetchall()
-            
-            
             return [row[0] for row in results]
         except Exception as e:
             logger.error(f"Erro ao selecionar jogos {e}", exc_info=True)
@@ -162,90 +164,103 @@ class DatabaseManager:
             raise
     
     def insert_team(self, team_item):
+        """
+        CORREÇÃO: As colunas `team_id` e `initials` não existem na `teams_table`.
+        A tabela tem `id`, `name`, `logo`. Ajustei para `id` e `name` (assumindo `team_id` no item é o `id` da tabela).
+        """
         try:
             adapter = ItemAdapter(team_item)
-            team_id = adapter.get('team_id')
+            team_id = adapter.get('team_id') 
             name = adapter.get('name')
-            initials = adapter.get('initials')
+            logo = adapter.get('logo') 
 
             self.cur.execute(
                 """
-                INSERT INTO teams_table (team_id, name, initials)
+                INSERT INTO teams_table (id, name, logo)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (team_id) DO NOTHING;
+                ON CONFLICT (id) DO NOTHING;
                 """,
-                (team_id, name, initials)
+                (team_id, name, logo)
             )
-            self.conn.commit()
 
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Erro ao inserir equipe {team_id}: {e}", exc_info=True)
             raise
 
-   
+    
     def insert_player(self, player_item):
+        """
+        CORREÇÃO: Colunas `player_id` e `name` no item parecem se mapear 
+        para `id` e `player_name` na tabela `players_table`.
+        """
         try:
             adapter = ItemAdapter(player_item)
-            player_id = adapter.get('player_id')
-            name = adapter.get('name')
+            player_id = adapter.get('player_id') 
+            name = adapter.get('name') 
+            icon_url = adapter.get('player_icon_url') 
 
             self.cur.execute(
                 """
-                INSERT INTO players_table (player_id, name)
-                VALUES (%s, %s)
-                ON CONFLICT (player_id) DO NOTHING;
+                INSERT INTO players_table (id, player_name, player_icon_url)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (id) DO NOTHING;
                 """,
-                (player_id, name)
+                (player_id, name, icon_url)
             )
-            self.conn.commit()
 
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Erro ao inserir jogador {player_id}: {e}", exc_info=True)
             raise
 
-   
+    
     def insert_player_team_season(self, item):
+        """
+        CORREÇÃO: O campo `team` foi alterado para `player_team_id` para corresponder
+        à definição da tabela `player_teams_by_season_table`.
+        """
         try:
             adapter = ItemAdapter(item)
             player_id = adapter.get("player_id")
-            team_name = adapter.get("team_name")
+            team_id = adapter.get("team_id") 
             season = adapter.get("season")
 
             self.cur.execute(
                 """
-                INSERT INTO player_teams_by_season_table (player_id, team, season)
+                INSERT INTO player_teams_by_season_table (player_id, player_team_id, season)
                 VALUES (%s, %s, %s)
-                ON CONFLICT DO NOTHING;
+                ON CONFLICT ON CONSTRAINT player_teams_by_season_table_pkey DO NOTHING;
                 """,
-                (player_id, team_name, season)
+                (player_id, team_id, season)
             )
-            self.conn.commit()
-
+            
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Erro ao inserir player_team_season: {e}", exc_info=True)
             raise
 
-   
+    
     def insert_game(self, game_item):
+        """
+        CORREÇÃO: O campo `game_id` no item é mapeado para `id` na tabela `games_table`.
+        """
         try:
             adapter = ItemAdapter(game_item)
-            game_id = adapter.get('game_id')
+            game_id = adapter.get('game_id') 
             season = adapter.get('season')
             home_team_id = adapter.get('home_team_id')
             away_team_id = adapter.get('away_team_id')
 
             self.cur.execute(
                 """
-                INSERT INTO games_table (game_id, season, home_team_id, away_team_id)
+                INSERT INTO games_table (id, season, home_team_id, away_team_id)
                 VALUES (%s, %s, %s, %s)
-                ON CONFLICT (game_id) DO NOTHING;
+                ON CONFLICT (id) DO NOTHING;
                 """,
                 (game_id, season, home_team_id, away_team_id)
             )
-            self.conn.commit()
+            
 
         except Exception as e:
             self.conn.rollback()
@@ -254,6 +269,9 @@ class DatabaseManager:
 
     
     def insert_shot(self, shot_item):
+        """
+        Nenhuma alteração na lógica de inserção necessária aqui, apenas no fluxo de commit.
+        """
         try:
             adapter = ItemAdapter(shot_item)
             player_id = adapter.get('player_id')
@@ -287,7 +305,7 @@ class DatabaseManager:
                     shot_x_location, shot_y_location
                 )
             )
-            self.conn.commit()
+            
 
         except Exception as e:
             self.conn.rollback()
