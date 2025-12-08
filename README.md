@@ -117,3 +117,32 @@ nomedaimagem:tag
 * `DB_HOST`, `DB_USER`, `DB_NAME`, `DB_PASS`: Conexão com PostgreSQL local ou remoto.
 
 Os logs serão exibidos no terminal e os dados serão persistidos no banco de dados.
+
+---
+
+## ⚙️ Workflows de GitHub Actions 🚀
+
+Para automatizar a integração contínua (CI) e a execução do scraper, foram implementados dois workflows principais no GitHub Actions:
+
+### 1. docker-build-push
+
+Este workflow é responsável por **construir a imagem Docker** do projeto e enviá-la para o Docker Hub.
+
+* **Gatilhos (Triggers)**:
+    * Automaticamente em todo **push** para a branch `main`.
+    * Manualmente através de **workflow_dispatch**.
+* **Ações Principais**: Faz login no Docker Hub e envia a imagem com a tag `leniziomo/scraper:latest`.
+
+### 2. docker-run
+
+Este workflow é responsável por **executar o scraper** em um container Docker, utilizando a imagem mais recente.
+
+* **Gatilhos (Triggers)**:
+    * Em **agendamento diário** (cron: `"0 0 * * *"` - tipicamente à meia-noite UTC).
+    * Manualmente através de **workflow_dispatch**.
+* **Ações Principais**:
+    * Puxa a imagem `leniziomo/scraper:latest`.
+    * Executa o container, passando variáveis de ambiente (como `TEMPORADA='2025/2026'`) e segredos para a conexão com o banco de dados.
+    * Exporta os **logs de execução** como um artefato (`scraper-log`) para auditoria.
+
+---
