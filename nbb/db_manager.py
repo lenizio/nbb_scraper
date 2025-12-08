@@ -162,6 +162,29 @@ class DatabaseManager:
             logger.error(f"Erro ao selecionar jogos {e}", exc_info=True)
             self.conn.rollback()
             raise
+    def insert_team(self, team_item):
+        try:
+            adapter = ItemAdapter(team_item)
+            team_id = adapter.get('id')
+            name = adapter.get('name')
+            logo = adapter.get('logo')
+
+            if not team_id:
+                logger.warning(f"Tentativa de inserir equipe sem ID. Dados: {team_item}")
+                return
+
+            self.cur.execute(
+                """
+                INSERT INTO teams_table (id, name, logo)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (id) DO NOTHING;
+                """,
+                (team_id, name, logo)
+            )
+        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
+            self.conn.rollback()
+            logger.error(f"Erro ao inserir/atualizar equipe '{team_id}': {e}", exc_info=True)
+            raise
     
     def insert_player(self, player_item):
         try:
