@@ -163,42 +163,16 @@ class DatabaseManager:
             self.conn.rollback()
             raise
     
-    def insert_team(self, team_item):
-        """
-        CORREÇÃO: As colunas `team_id` e `initials` não existem na `teams_table`.
-        A tabela tem `id`, `name`, `logo`. Ajustei para `id` e `name` (assumindo `team_id` no item é o `id` da tabela).
-        """
-        try:
-            adapter = ItemAdapter(team_item)
-            team_id = adapter.get('team_id') 
-            name = adapter.get('name')
-            logo = adapter.get('logo') 
-
-            self.cur.execute(
-                """
-                INSERT INTO teams_table (id, name, logo)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (id) DO NOTHING;
-                """,
-                (team_id, name, logo)
-            )
-
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Erro ao inserir equipe {team_id}: {e}", exc_info=True)
-            raise
-
-    
     def insert_player(self, player_item):
-        """
-        CORREÇÃO: Colunas `player_id` e `name` no item parecem se mapear 
-        para `id` e `player_name` na tabela `players_table`.
-        """
         try:
             adapter = ItemAdapter(player_item)
-            player_id = adapter.get('player_id') 
-            name = adapter.get('name') 
-            icon_url = adapter.get('player_icon_url') 
+            player_id = adapter.get('player_id')
+            player_name = adapter.get('player_name')
+            player_icon_url = adapter.get('player_icon_url')
+
+            if not player_id:
+                logger.warning(f"Tentativa de inserir jogador sem ID. Dados: {player_item}")
+                return
 
             self.cur.execute(
                 """
@@ -206,65 +180,87 @@ class DatabaseManager:
                 VALUES (%s, %s, %s)
                 ON CONFLICT (id) DO NOTHING;
                 """,
-                (player_id, name, icon_url)
+                (player_id, player_name, player_icon_url)
             )
-
-        except Exception as e:
+        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
             self.conn.rollback()
-            logger.error(f"Erro ao inserir jogador {player_id}: {e}", exc_info=True)
+            logger.error(f"Erro ao inserir/atualizar jogador '{player_id}': {e}", exc_info=True)
             raise
-
     
-    def insert_player_team_season(self, item):
-        """
-        CORREÇÃO: O campo `team` foi alterado para `player_team_id` para corresponder
-        à definição da tabela `player_teams_by_season_table`.
-        """
+    def insert_player_team_by_season(self, player_item):
         try:
-            adapter = ItemAdapter(item)
-            player_id = adapter.get("player_id")
-            team_id = adapter.get("team_id") 
-            season = adapter.get("season")
+            adapter = ItemAdapter(player_item)
+            player_id = adapter.get('player_id')
+            player_team_id = adapter.get('player_team_id')
+            season = adapter.get('season')
+            player_number = adapter.get('player_number')
+
+            if not all([player_id, player_team_id, season]):
+                logger.warning(f"Dados faltando para player_teams_by_season. Dados: {player_item}")
+                return
 
             self.cur.execute(
                 """
-                INSERT INTO player_teams_by_season_table (player_id, player_team_id, season)
-                VALUES (%s, %s, %s)
-                ON CONFLICT ON CONSTRAINT player_teams_by_season_table_pkey DO NOTHING;
+                INSERT INTO player_teams_by_season_table (player_id, player_team_id, season, player_number)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (player_id, player_team_id, season) DO NOTHING;
                 """,
-                (player_id, team_id, season)
+                (player_id, player_team_id, season, player_number)
             )
-            
-        except Exception as e:
+        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
             self.conn.rollback()
-            logger.error(f"Erro ao inserir player_team_season: {e}", exc_info=True)
+            logger.error(f"Erro ao inserir time do jogador '{player_id}' na temporada '{season}': {e}", exc_info=True)
             raise
 
-    
     def insert_game(self, game_item):
-        """
-        CORREÇÃO: O campo `game_id` no item é mapeado para `id` na tabela `games_table`.
-        """
         try:
             adapter = ItemAdapter(game_item)
-            game_id = adapter.get('game_id') 
-            season = adapter.get('season')
-            home_team_id = adapter.get('home_team_id')
-            away_team_id = adapter.get('away_team_id')
+            game_id = adapter.get('game_id')
+
+            if not game_id:
+                logger.warning(f"Tentativa de inserir jogo sem ID. Dados: {game_item}")
+                return
 
             self.cur.execute(
                 """
-                INSERT INTO games_table (id, season, home_team_id, away_team_id)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO games_table (
+                    id, game_date, game_time,
+                    home_team_id, away_team_id,
+                    home_team_score, away_team_score,
+                    round, stage, season, arena, link
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE
+                SET game_date = EXCLUDED.game_date,
+                    game_time = EXCLUDED.game_time,
+                    home_team_id = EXCLUDED.home_team_id,
+                    away_team_id = EXCLUDED.away_team_id,
+                    home_team_score = EXCLUDED.home_team_score,
+                    away_team_score = EXCLUDED.away_team_score,
+                    round = EXCLUDED.round,
+                    stage = EXCLUDED.stage,
+                    season = EXCLUDED.season,
+                    arena = EXCLUDED.arena,
+                    link = EXCLUDED.link;
                 """,
-                (game_id, season, home_team_id, away_team_id)
+                (
+                    game_id,
+                    adapter.get('game_date'),
+                    adapter.get('game_time'),
+                    adapter.get('home_team_id'),
+                    adapter.get('away_team_id'),
+                    adapter.get('home_team_score'),
+                    adapter.get('away_team_score'),
+                    adapter.get('round'),
+                    adapter.get('stage'),
+                    adapter.get('season'),
+                    adapter.get('arena'),
+                    adapter.get('link')
+                )
             )
-            
-
-        except Exception as e:
+        except (NotNullViolation, InFailedSqlTransaction, psycopg2.Error) as e:
             self.conn.rollback()
-            logger.error(f"Erro ao inserir jogo {game_id}: {e}", exc_info=True)
+            logger.error(f"Erro ao inserir/atualizar jogo '{game_id}': {e}", exc_info=True)
             raise
 
     
